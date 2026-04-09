@@ -1,30 +1,53 @@
 # Prova técnica IBGE
 
-Script em Node.js (≥18): lê um CSV de municípios, consulta a API de localidades do IBGE, gera o CSV de saída, calcula estatísticas e envia para a API de correção (quando configurado).
+Enriquecimento de municípios com a API de localidades do IBGE, geração de CSV, estatísticas e envio para correção automática.
+
+**Requisito:** Node.js ≥ 18.
+
+---
 
 ## Como rodar
 
+**1. Instalar dependências**
+
 ```bash
 npm install
+```
+
+**2. Variáveis de ambiente**
+
+```bash
 cp .env.example .env
 ```
 
-Ajuste `.env`: `INPUT_CSV` / `OUTPUT_CSV` (ex.: `input.csv`, `resultado.csv`), `IBGE_LOCALIDADES_BASE_URL`, `IBGE_SUBMIT_URL` e `ACCESS_TOKEN` conforme o enunciado.
+Edite `.env` e preencha, no mínimo:
+
+| Variável | Descrição |
+|----------|-----------|
+| `INPUT_CSV` | Caminho do CSV de entrada (ex.: `input.csv`) |
+| `OUTPUT_CSV` | Caminho do CSV gerado (ex.: `resultado.csv`) |
+| `IBGE_LOCALIDADES_BASE_URL` | Base da API de localidades (enunciado) |
+| `IBGE_SUBMIT_URL` | URL da Edge Function de envio |
+| `ACCESS_TOKEN` | JWT do login (Supabase) |
+
+**3. Executar**
 
 ```bash
 npm start
 ```
 
-(`npm start` roda `node src/index.js`.)
+Equivale a `node src/index.js`.
 
-## Notas (decisões técnicas)
+---
 
-- **Fluxo:** ler entrada → buscar `/municipios` uma vez → por linha, casar nome com o cadastro IBGE → preencher nome oficial, UF (sigla), região, código e status → agregar estatísticas → POST `{ stats }` com Bearer token.
+## Decisões técnicas
 
-- **Normalização de nome:** trim, NFD e remoção de diacríticos + minúsculas, para alinhar input sem acento ao nome oficial.
+**Pipeline** — Ler o CSV → `GET /municipios` uma vez → por linha, casar o nome ao cadastro IBGE → preencher nome oficial, UF (sigla), região, código IBGE e status → calcular agregados → `POST` JSON `{ stats }` com `Authorization: Bearer …`.
 
-- **Match:** igualdade após normalizar; se não houver, **Levenshtein** com distância máxima aceitável. Vários municípios com a mesma distância mínima → **`AMBIGUO`**. Distância mínima acima do limite → **`NAO_ENCONTRADO`**.
+**Nomes** — Normalização com trim, Unicode NFD e remoção de marcas diacríticas, em minúsculas, para equiparar input sem acentuação ao nome oficial.
 
-- **UF / região:** obtidos do JSON do IBGE (`microrregiao` → `mesorregiao` → `UF` → `regiao`), não inventados.
+**Matching** — Primeiro igualdade na forma normalizada; senão, distância de **Levenshtein** com limiar máximo. Empate na melhor distância entre vários municípios → `AMBIGUO`. Melhor distância acima do limiar → `NAO_ENCONTRADO`.
 
-- **Estatísticas:** contagens por status; `pop_total_ok` e médias por região usam apenas linhas com status **`OK`**
+**UF e região** — Extraídos do payload do IBGE (`microrregiao` → `mesorregiao` → `UF` → `regiao`).
+
+**Estatísticas** — Contagens por status; `pop_total_ok` e médias por região consideram apenas linhas com status `OK`.
